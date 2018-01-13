@@ -144,7 +144,48 @@ public class User {
             
             mngObjOut.flush();
             
+            Object mngResponse = mngObjIn.readObject();
             
+            // Inicializar objects possivei de resposta;
+            String mngStringResponse = null;
+            UserRequest mngPairRequest = null;
+            
+            if (mngResponse != null) {
+                if (mngResponse instanceof String) {
+                    mngStringResponse = (String) mngResponse;
+
+                    System.out.println(mngStringResponse);
+
+                // O servidor de gestao pede confirmacao ou negacao de um pedido de par
+                } else if (mngResponse instanceof UserRequest) {
+                    mngPairRequest = (UserRequest) mngResponse;
+                    
+                    // Ter a certeza que esta a pedir par.
+                    if (mngPairRequest.getType() == UserRequest.ASK_PAIR_REQUEST) {
+                        System.out.print(mngPairRequest.getUsername()
+                                + " pede para fazer par consigo. Aceita? (y/n): ");
+                        
+                        BufferedReader buff = new BufferedReader(new InputStreamReader(System.in));
+                        String conf = buff.readLine();
+                        
+                        // Bastaria so mudar o tipo do request recido no entanto
+                        // a resposta em texto que o servidor mandara ficara errada.
+                        // Logo criamos um novo UserRequest com o tipo desejado
+                        // e invertem-se os usernames. 
+                        UserRequest r = new UserRequest();
+                        r.setUsername(mngPairRequest.getPairUsername());
+                        r.setPairUsername(mngPairRequest.getUsername());
+                        
+                        if (conf.equalsIgnoreCase("y"))
+                            r.setType(UserRequest.ACCEPT_REQUEST);
+                        
+                        else if (conf.equalsIgnoreCase("n"))
+                            r.setType(UserRequest.DENY_REQUEST);
+                        
+                        mngObjOut.writeObject(r);
+                    }
+                }
+            }
             
             } catch (UnknownHostException ex) {
                 System.out.println("[ERRO] Impossivel ligar ao servidor de gestao.");
@@ -152,6 +193,8 @@ public class User {
 
             } catch (IOException e) {
                 System.out.println("[ERRO] Ocorreu um erro no acesso ao socket.");
+            } catch (ClassNotFoundException e) {
+                System.out.println("[ERRO] Foi recebido um objecto invalido.");
             }
         } finally {
             if (managementServerSocket != null)

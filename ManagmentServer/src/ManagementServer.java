@@ -3,6 +3,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.DatagramPacket;
+import java.net.MulticastSocket;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -16,6 +18,7 @@ import java.util.HashMap;
 
 public class ManagementServer implements Runnable {
     static final int TIMEOUT = 60000;
+    static final int MULTICAST_PORT = 4001;
     
     static final String JDBC_DRIVER = "com.mysql.jdbc.Driver";
     static final String DB_USER = "user";
@@ -29,6 +32,8 @@ public class ManagementServer implements Runnable {
     // sockets de todos os clientes para permitir mandar mmensagens
     private ArrayList<Socket> clients;
     
+    private MulticastSocket multicastSocket;
+    
     public ManagementServer(
             Socket client, Connection conn,
             // Referencia para o receiver para obter o servidor de jogo actual 
@@ -38,6 +43,13 @@ public class ManagementServer implements Runnable {
         this.conn = conn;
         this.heartbeatReceiver = hb;
         this.clients = clients;
+        
+        try {
+            this.multicastSocket = new MulticastSocket(MULTICAST_PORT);
+            
+        } catch (IOException e) {
+            System.out.println("Impossivel iniciar multicast socket");
+        }
     }
     
     public static void main(String[] args) {
@@ -191,15 +203,43 @@ public class ManagementServer implements Runnable {
         return response;
     }
     
-    private void requestPair(String username, String pairusername) throws SQLException {
-        String query = "SELECT user1, user 2 FROM pairs WHERE user1 = ? or user1 = ?;";
-
+    private void createUnconfirmedPair(String username, String pairusername) throws SQLException {
+        String query = "INSERT INTO pairs (user1, user2, confirmed) VALUES (?, ?, ?);";
+        
         PreparedStatement pstmt = conn.prepareStatement(query);
         pstmt.setString(1, username);
         pstmt.setString(2, pairusername);
+        pstmt.setBoolean(3, false);
+    }
+    
+    private void confirmPair(String username, String pairusername) throws SQLException {
+        String query = "UPDATE pairs SET confirmed = ?"
+                + "WHERE (user1 = ? AND user2 = ?)"
+                + "OR (user1 = ? AND user2 = ?;";
+
+        PreparedStatement pstmt = conn.prepareStatement(query);
+        pstmt.setBoolean(1, true);
+        pstmt.setString(2, username);
+        pstmt.setString(3, pairusername);
+        pstmt.setString(4, pairusername);
+        pstmt.setString(5, username);
         
+        pstmt.executeUpdate();
+    }
+    
+    private void denyPair(String username, String pairusername) throws SQLException {
+        String query = "DELETE FROM pairs"
+                + "WHERE (user1 = ? AND user2 = ?)"
+                + "OR (user1 = ? AND user2 = ?;";
         
+        PreparedStatement pstmt = conn.prepareStatement(query);
+        pstmt.setBoolean(1, true);
+        pstmt.setString(2, username);
+        pstmt.setString(3, pairusername);
+        pstmt.setString(4, pairusername);
+        pstmt.setString(5, username);
         
+        pstmt.executeUpdate();
     }
     
     private String getUserAddress(String username) throws SQLException {
@@ -216,8 +256,28 @@ public class ManagementServer implements Runnable {
         return null;
     }
     
-    private void sendMulticastMessage(String msg) {
+    private ArrayList<String> getAllAddresses() throws SQLException {
+        ArrayList<String> addrs = new ArrayList<>();
         
+        String query = "SELECT address FROM user WHERE authenticated = ?;";
+        PreparedStatement pstmt = conn.prepareStatement(query);
+        pstmt.setBoolean(1, true);
+        
+        ResultSet rs = pstmt.executeQuery();
+        
+        while (rs.next()) addrs.add(rs.getString(1));
+        
+        return addrs;
+    }
+    
+    private Socket getClientSocket(String addr) {
+        Socket s = null;
+        for (Socket c: clients)
+            if (s.getInetAddress().toString().equals(addr)) {
+                s = c;
+                break;
+            }
+        return s;
     }
     
     @Override
@@ -262,11 +322,64 @@ public class ManagementServer implements Runnable {
                     break;
                     
                 case UserRequest.PAIR_REQUEST:
-                    
+                    try {
+                        String addr = getUserAddress(request.getPairUsername());
+                        if (addr == null) {
+                            response = "Pairusername nao encontrado.";
+                        
+                        } else {
+                            createUnconfirmedPair(request.getUsername(), request.getPairUsername());
+                            
+                            // perguntar ao outro utilizador se quer formar par
+                            Socket s = getClientSocket(addr);
+                            if (s != null) {
+                                UserRequest rq = new UserRequest(UserRequest.ASK_PAIR_REQUEST);
+                                rq.setUsername(request.getUsername());
+                                rq.setPairUsername(request.getPairUsername());
+
+                                ObjectOutputStream reqOut = new ObjectOutputStream(s.getOutputStream());
+                                reqOut.writeObject(rq);
+                            }
+                        }
+                    } catch (SQLException e) {
+                        response = "Impossivel criar par";
+                    }
                     break;
                 
-                case UserRequest.ACCEPT_REQUEST: break;
-                case UserRequest.DENY_REQUEST: break;
+                case UserRequest.ACCEPT_REQUEST:
+                    try {
+                        confirmPair(request.getUsername(), request.getPairUsername());
+                        response = "Par criado com " + request.getPairUsername() + ". Pode iniciar o jogo.";
+                        
+                        // Notificar o solicitador que foi aceitado.
+                        String addr = getUserAddress(request.getPairUsername());
+                        Socket s = getClientSocket(addr);
+                        if (s != null) {
+                            String msg = request.getUsername() + " aceitou o seu pedido para criar par. Pode iniciar o jogo.";
+                            ObjectOutputStream reqOut = new ObjectOutputStream(s.getOutputStream());
+                            reqOut.writeObject(msg);
+                        }
+                    } catch (SQLException e) {
+                        response = "Impossivel confirmar o par.";
+                    }
+                    break;
+                case UserRequest.DENY_REQUEST:
+                    try {
+                        denyPair(request.getUsername(), request.getPairUsername());
+                        response = "Par com " + request.getPairUsername() +" negado.";
+                        
+                        // Notificar o solicitador que foi negado.
+                        String addr = getUserAddress(request.getPairUsername());
+                        Socket s = getClientSocket(addr);
+                        if (s != null) {
+                            String msg = request.getUsername() + " negou o seu pedido para criar par.";
+                            ObjectOutputStream reqOut = new ObjectOutputStream(s.getOutputStream());
+                            reqOut.writeObject(msg);
+                        }
+                    } catch (SQLException e) {
+                        response = "Impossivel negar o par.";
+                    }
+                    break;
                 case UserRequest.PLAYER_MESSAGE_REQUEST:
                     try {
                         String address = getUserAddress(request.getPairUsername());
@@ -274,12 +387,12 @@ public class ManagementServer implements Runnable {
                         if (address == null) {
                             response = "Jogador nao encontrado.";
                         } else {
-                            for (Socket s: clients)
-                                if (s.getInetAddress().toString().equals(address)) {
-                                    response = request.getUsername() + ": @" + request.getPairUsername() + request.getMessage();
-                                    break; // from for loop
-                                }
-
+                            String msg = request.getUsername() + ": @" + request.getPairUsername() + request.getMessage();
+                            Socket s = getClientSocket(address);
+                            if (s != null) {
+                                ObjectOutputStream msgOut = new ObjectOutputStream(s.getOutputStream());
+                                msgOut.writeObject(msg);
+                            }
                         }
                     } catch (SQLException e) {
                         response = "Problema no sql ao procurar jogador.";
@@ -287,8 +400,19 @@ public class ManagementServer implements Runnable {
                     
                     break;
                 case UserRequest.MESSAGE_REQUEST:
-                    sendMulticastMessage(request.getMessage());
+                    try {
+                    ArrayList<String> addrs = getAllAddresses();
+                    
+                    for (Socket s: clients)
+                        if (addrs.contains(s.getInetAddress().toString())) {
+                            String msg = request.getUsername() + ": " + request.getMessage();
+                            ObjectOutputStream msgOut = new ObjectOutputStream(s.getOutputStream());
+                            msgOut.writeObject(msg);
+                        }
                     break;
+                    } catch(SQLException e) {
+                        response = "Problema no sql ao aceder a base de dados.";
+                    }
                 }
                 
                 output.writeObject(response);

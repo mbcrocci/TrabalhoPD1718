@@ -17,8 +17,9 @@ public class UserRequest implements Serializable{
     static final int PAIR_REQUEST = 4;
     static final int ACCEPT_REQUEST = 5;
     static final int DENY_REQUEST = 6;
-    static final int PLAYER_MESSAGE_REQUEST = 7;
-    static final int MESSAGE_REQUEST = 8; // multicast
+    static final int ASK_PAIR_REQUEST = 7;
+    static final int PLAYER_MESSAGE_REQUEST = 8;
+    static final int MESSAGE_REQUEST = 9; // multicast
     
     // Tipo de request 
     private int type;
