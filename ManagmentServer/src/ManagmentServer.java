@@ -2,37 +2,53 @@
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javafx.util.Pair;
+import java.util.ArrayList;
 
 public class ManagmentServer implements Runnable {
+    static final int TIMEOUT = 60000;
+    
     static final String JDBC_DRIVER = "com.mysql.jdbc.Driver";
     static final String DB_USER = "user";
     static final String DB_PASS = "password";
     
-    List<Socket> gameServers;
-    Connection conn;
+    private Socket client;
+    private Connection conn;
     
-    HeartbeatReceiver heartbeatReceiver;
+    private HeartbeatReceiver heartbeatReceiver;
     
-    public ManagmentServer(Connection conn, String dataseAddress) throws SocketException {
+    // Lista de clientes autenticados. Sincroniza com a funcao main()
+    private ArrayList<String> authClients;
+    
+    public ManagmentServer(
+            Socket client, Connection conn,
+            // Referencia para o receiver para obter o servidor de jogo actual 
+            HeartbeatReceiver hb,
+            ArrayList<String> authClients) {
+        this.client = client;
         this.conn = conn;
-        this.heartbeatReceiver = new HeartbeatReceiver(dataseAddress);
+        this.heartbeatReceiver = hb;
     }
     
 
     public static void main(String[] args) {
-        
         String databaseAddress;
+        String db_url;
+        Connection databaseConn;
+        ServerSocket socket;
+        HeartbeatReceiver heartbeatReceiver;
+        Thread hbThread;
+        ArrayList<Thread> clientHandlers;
+        ArrayList<String> authClients;
+        
         if (args.length != 1) {
             System.out.println("Sintaxe: java ManagmentServer <ip base dados>");
             
@@ -53,49 +69,87 @@ public class ManagmentServer implements Runnable {
             databaseAddress = args[0];
         }
         
-        String db_url ="jdbc:mysql://" + databaseAddress + "/trabalhopd";
-        Connection conn;
-                
+        db_url ="jdbc:mysql://" + databaseAddress + "/trabalhopd";       
         // Fazer ligacao a base de dados
         try {
             Class.forName(JDBC_DRIVER);
             
             System.out.println("Connecting to database..."); 
-            conn = DriverManager.getConnection(db_url, DB_USER, DB_PASS);
+            databaseConn = DriverManager.getConnection(db_url, DB_USER, DB_PASS);
             
         } catch (ClassNotFoundException ex) {
             ex.printStackTrace();
             return;
+
         } catch (SQLException ex) {
-            System.out.println("[ERROR] Connection to database failed.");
+            System.out.println("[ERROR] Impossivel ligar a base de dados.");
             return;
         }
         
-        ServerSocket socket;
+        // Cria a socket que vai correr o ManagmentServer
         try {
             socket = new ServerSocket();
+            
         } catch (IOException e) {
-            System.out.println("[ERROR] ServerSocket criation failed");
+            System.out.println("[ERRO] Impossivel criar serversocket.");
             e.printStackTrace();
             return;
         }
         
-        ManagmentServer mServer = new ManagmentServer(conn);
-        while (true) {
-            // Aceitar ligacao de clientes
+        // Criar o HeartbeatReceiver que vai responder as ligacoes UDP dos servidores de jogo
+        try {
+            heartbeatReceiver = new HeartbeatReceiver(databaseAddress);
             
-            Socket s = null;
+        } catch (SocketException e) {
+            System.out.println("[ERRO] Nao foi possivel criar um Heartbeat Receiver.");
+            return;
+        }
+        
+        // Comecar o HeartbeatReceiver numa thread e inicia-a
+        hbThread = new Thread(heartbeatReceiver);
+        hbThread.start();
+        
+        // inicializa a lista das threads de clientes e a dos ips dos que ja estao atenticados
+        clientHandlers = new ArrayList<>();
+        authClients = new ArrayList<>();
+        
+        while (true) {
+            Socket client = null;
             try {
-                s = socket.accept();
+                // aceitar uma nova ligacao
+                client = socket.accept();
+                
+                client.setSoTimeout(TIMEOUT);
+                
+                // criar uma thread que vai atender o cliente
+                clientHandlers.add(new Thread(
+                        new ManagmentServer(
+                                client, databaseConn,
+                                heartbeatReceiver, authClients
+                        )
+                ));
+                clientHandlers.get(clientHandlers.size()-1).start();
+                
             } catch (IOException e) {
-                System.out.println("[ERROR] Couldn't accept connection.");
+                System.out.println("[ERRO] Impossivel aceitar ligacao.");
                 e.printStackTrace();
-            }
+            } 
         }
     }
     
     @Override
     public void run() {
-        
+        try {
+            InputStream input = client.getInputStream();
+            OutputStream output = client.getOutputStream();
+            
+            
+            // Ler request
+            
+            // Responder ao request
+            
+            
+        } catch (Exception e) {
+        }
     }
 }

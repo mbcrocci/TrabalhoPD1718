@@ -119,9 +119,11 @@ public class HeartbeatReceiver implements Runnable {
     }
     
     private void cleanGameServerList() {
-        for (Heartbeat h : this.gameServers)
-            if (h.getCounter() >= 3) 
-                this.gameServers.remove(h);
+        this.gameServers.stream()
+                .filter((h) -> (h.getCounter() >= 3))
+                .forEachOrdered((h) -> {
+                    this.gameServers.remove(h);
+                });
     }
     
     public String getCurrentGameServer() {
