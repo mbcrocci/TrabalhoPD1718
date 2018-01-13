@@ -3,6 +3,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -15,14 +16,14 @@ public class HeartbeatReceiver implements Runnable {
         public String gameServerAddress;
 
         // Quando o Heartbeat foi criado
-        private Long timepoint;
+        private int beatCounter;
         
         // Quando chega a 3 o Receiver apaga da lista
         private int counter;
         
         public Heartbeat(String gameServerAddress) {
             this.gameServerAddress = gameServerAddress;
-            this.timepoint = System.currentTimeMillis();
+            this.beatCounter = 1;
             this.counter = 0;
         }
         
@@ -34,12 +35,12 @@ public class HeartbeatReceiver implements Runnable {
             return this.counter;
         }
         
-        public Long getTimePoint() {
-            return this.timepoint;
+        public int getBeatCounter() {
+            return beatCounter;
         }
         
-        public void updateTimePoint() {
-            this.timepoint = System.currentTimeMillis();
+        public void tickBeatCounter() {
+            this.beatCounter++;
         }
         
         public void resetCounter() {
@@ -120,14 +121,18 @@ public class HeartbeatReceiver implements Runnable {
     
     private void cleanGameServerList() {
         this.gameServers.stream()
-                .filter((h) -> (h.getCounter() >= 3))
-                .forEachOrdered((h) -> {
-                    this.gameServers.remove(h);
+                .filter((h) -> (h.getCounter() >= 3)) // ficam so os que tem o counter >= 3
+                .forEachOrdered((h) -> { // por cada um
+                    this.gameServers.remove(h); // remove-o da lista
                 });
     }
     
     public String getCurrentGameServer() {
-        return this.gameServers.get(0).getGameServerAddress();
+        final Comparator<Heartbeat> comp = (h1, h2) -> Integer.compare(h1.getBeatCounter(), h2.getBeatCounter());
+        return this.gameServers.stream() 
+                .max(comp) // usa o comp para ver qual e o que tem mais heartbeats
+                .get() // vai buscat o objecto
+                .getGameServerAddress(); // devolve o address
     }
     
     public void closeSocket() {
@@ -161,7 +166,7 @@ public class HeartbeatReceiver implements Runnable {
                 if (gameServers.contains(heartbeat)) {
                     int index = gameServers.indexOf(heartbeat);
                     Heartbeat server = gameServers.get(index);
-                    server.updateTimePoint();
+                    server.tickBeatCounter();
                     server.resetCounter();
                 
                 } else {
