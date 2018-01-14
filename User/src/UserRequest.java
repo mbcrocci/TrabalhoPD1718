@@ -14,17 +14,17 @@ public class UserRequest implements Serializable{
     static final int REGISTER_REQUEST = 1;
     static final int AUTHENTICATE_REQUEST = 2;
     static final int SHOW_PLAYER_LIST_REQUEST = 3;
-    static final int PAIR_REQUEST = 4;
-    static final int ACCEPT_REQUEST = 5;
-    static final int DENY_REQUEST = 6;
-    static final int ASK_PAIR_REQUEST = 7;
-    static final int PLAYER_MESSAGE_REQUEST = 8;
-    static final int MESSAGE_REQUEST = 9; // multicast
+    static final int SHOW_PAIR_LIST_REQUEST = 4;
+    static final int PAIR_REQUEST = 5;
+    static final int ACCEPT_REQUEST = 6;
+    static final int DENY_REQUEST = 7;
+    static final int ASK_PAIR_REQUEST = 8;
+    static final int PLAYER_MESSAGE_REQUEST = 9;
+    static final int MESSAGE_REQUEST = 10;
+    static final int DISCONNECT_REQUEST = 11;
     
     // Tipo de request 
     private int type;
-    
-    private String ipAddress;
     
     // Register and Authenticate
     private String username;
@@ -42,21 +42,12 @@ public class UserRequest implements Serializable{
         this.type = type;
     }
     
-    public UserRequest(int type, String ipAddress) {
-        this.type = type;
-        this.ipAddress = ipAddress;
-    }
-    
     public int getType() {
         return type;
     }
     
     public void setType(int type) {
         this.type = type;
-    }
-    
-    public String ipAddress() {
-        return ipAddress;
     }
     
     public String getUsername() {

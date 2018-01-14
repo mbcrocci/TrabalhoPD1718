@@ -34,7 +34,7 @@ public class User {
         
         // TODO: permitir variacoes dos comandos
         
-        if (command.equalsIgnoreCase("register")) {
+        if (command.equalsIgnoreCase("registar")) {
             if (cmdArgs.length != 3) {
                 System.out.println("Comando errado. Sintaxe: register <username> <password>");
                 return null;
@@ -54,7 +54,7 @@ public class User {
             request.setUsername(cmdArgs[1]);
             request.setPassword(cmdArgs[2]);
             
-        } else if (command.equalsIgnoreCase("mostralista")) {
+        } else if (command.equalsIgnoreCase("mostrarlista")) {
             if (cmdArgs.length != 1) {
                 System.out.println("Demasiados argumentos. Serao ignorados.");
             }
@@ -88,6 +88,12 @@ public class User {
             
             request = new UserRequest(UserRequest.DENY_REQUEST);
             request.setUsername(cmdArgs[1]);
+            
+        } else if (command.equalsIgnoreCase("mostrarpares")) {
+            request = new UserRequest(UserRequest.SHOW_PAIR_LIST_REQUEST);
+            
+        } else if (command.equalsIgnoreCase("sair")) {
+            request = new UserRequest(UserRequest.DISCONNECT_REQUEST);
         }
         
         return request;
@@ -128,61 +134,73 @@ public class User {
         try {
             try {
             managementServerSocket = new Socket(managementAddress, managementPort);
-            
             managementServerSocket.setSoTimeout(TIMEOUT);
             
-            mngObjIn = new ObjectInputStream(managementServerSocket.getInputStream());
-            mngObjOut = new ObjectOutputStream(managementServerSocket.getOutputStream());
-            
-            
-            String cmd = readCommand();
-            
-            UserRequest request = parseCommand(cmd);    
-            
-            if (request != null)
+            System.out.println("Ligado ao servidor de gestao...");
+           
+            while (true) {
+                String cmd = readCommand();
+
+                UserRequest request = parseCommand(cmd);
+                
+                if (request == null)
+                    System.out.println("Commando invalido.");
+                
+                mngObjOut = new ObjectOutputStream(managementServerSocket.getOutputStream());
                 mngObjOut.writeObject(request);
-            
-            mngObjOut.flush();
-            
-            Object mngResponse = mngObjIn.readObject();
-            
-            // Inicializar objects possivei de resposta;
-            String mngStringResponse = null;
-            UserRequest mngPairRequest = null;
-            
-            if (mngResponse != null) {
-                if (mngResponse instanceof String) {
-                    mngStringResponse = (String) mngResponse;
+                mngObjOut.flush();
+                System.out.println("Request sent!");
+              
+                mngObjOut.flush();
+                mngObjIn = new ObjectInputStream(managementServerSocket.getInputStream());
+                Object mngResponse = mngObjIn.readObject();
+                
+                System.out.println("Resposta obtida.");
 
-                    System.out.println(mngStringResponse);
+                // Inicializar objects possivei de resposta;
+                String mngStringResponse = null;
+                UserRequest mngPairRequest = null;
 
-                // O servidor de gestao pede confirmacao ou negacao de um pedido de par
-                } else if (mngResponse instanceof UserRequest) {
-                    mngPairRequest = (UserRequest) mngResponse;
-                    
-                    // Ter a certeza que esta a pedir par.
-                    if (mngPairRequest.getType() == UserRequest.ASK_PAIR_REQUEST) {
-                        System.out.print(mngPairRequest.getUsername()
-                                + " pede para fazer par consigo. Aceita? (y/n): ");
+                if (mngResponse != null) {
+                    if (mngResponse instanceof String) {
+                        mngStringResponse = (String) mngResponse;
                         
-                        BufferedReader buff = new BufferedReader(new InputStreamReader(System.in));
-                        String conf = buff.readLine();
+                        System.out.println(mngStringResponse);
+
+                        if (mngStringResponse.equals("Disconnected...")) {
+                            managementServerSocket.close();
+                            System.exit(1);
+                        }
                         
-                        // Bastaria so mudar o tipo do request recido no entanto
-                        // a resposta em texto que o servidor mandara ficara errada.
-                        // Logo criamos um novo UserRequest com o tipo desejado
-                        // e invertem-se os usernames. 
-                        UserRequest r = new UserRequest();
-                        r.setUsername(mngPairRequest.getPairUsername());
-                        r.setPairUsername(mngPairRequest.getUsername());
-                        
-                        if (conf.equalsIgnoreCase("y"))
-                            r.setType(UserRequest.ACCEPT_REQUEST);
-                        
-                        else if (conf.equalsIgnoreCase("n"))
-                            r.setType(UserRequest.DENY_REQUEST);
-                        
-                        mngObjOut.writeObject(r);
+                    // O servidor de gestao pede confirmacao ou negacao de um pedido de par
+                    } else if (mngResponse instanceof UserRequest) {
+                        mngPairRequest = (UserRequest) mngResponse;
+
+                        // Ter a certeza que esta a pedir par.
+                        if (mngPairRequest.getType() == UserRequest.ASK_PAIR_REQUEST) {
+                            System.out.print(mngPairRequest.getUsername()
+                                    + " pede para fazer par consigo. Aceita? (y/n): ");
+
+                            BufferedReader buff = new BufferedReader(new InputStreamReader(System.in));
+                            String conf = buff.readLine();
+
+                            // Bastaria so mudar o tipo do request recido no entanto
+                            // a resposta em texto que o servidor mandara ficara errada.
+                            // Logo criamos um novo UserRequest com o tipo desejado
+                            // e invertem-se os usernames. 
+                            UserRequest r = new UserRequest();
+                            r.setUsername(mngPairRequest.getPairUsername());
+                            r.setPairUsername(mngPairRequest.getUsername());
+
+                            if (conf.equalsIgnoreCase("y"))
+                                r.setType(UserRequest.ACCEPT_REQUEST);
+
+                            else if (conf.equalsIgnoreCase("n"))
+                                r.setType(UserRequest.DENY_REQUEST);
+
+                            mngObjOut.writeObject(r);
+                            mngObjOut.flush();
+                        }
                     }
                 }
             }
@@ -193,6 +211,7 @@ public class User {
 
             } catch (IOException e) {
                 System.out.println("[ERRO] Ocorreu um erro no acesso ao socket.");
+                e.printStackTrace();
             } catch (ClassNotFoundException e) {
                 System.out.println("[ERRO] Foi recebido um objecto invalido.");
             }

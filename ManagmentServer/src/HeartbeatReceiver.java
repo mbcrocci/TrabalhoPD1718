@@ -10,8 +10,6 @@ import java.util.TimerTask;
 
 public class HeartbeatReceiver implements Runnable {
 
-    // Contem o Address do servidor de jogo que mandou o heartbeat
-    // e o timepoint em que foi mandado.
     protected class Heartbeat {
         public String gameServerAddress;
 
